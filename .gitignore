@@ -3,5 +3,5 @@
 Cargo.lock
 bin/
 pkg/
-www/
 wasm-pack.log
+src/roms/
