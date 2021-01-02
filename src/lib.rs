@@ -1,13 +1,37 @@
-mod utils;
+use std::rc::Rc;
+use std::cell::RefCell;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
+
+// ------------------------------- WebSys --------------------------------- //
+
+fn window() -> web_sys::Window {
+    web_sys::window().expect("no global `window` exists")
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+    window()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
+fn document() -> web_sys::Document {
+    window()
+        .document()
+        .expect("should have a document on window")
+}
+
+fn body() -> web_sys::HtmlElement {
+    document().body().expect("document should have a body")
+}
+
+// ------------------------------ Externs --------------------------------- //
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
 #[cfg(feature = "wee_alloc")]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-// -------------------------  WASM  --------------------------//
 
 #[wasm_bindgen]
 extern {
@@ -29,7 +53,7 @@ extern "C" {
     fn put_regs(x: &str);
 }
 
-// ---------------------Emulator-------------------------------//
+// ----------------------------- Emulator --------------------------------- //
 
 #[wasm_bindgen]
 pub struct Emu {
@@ -40,88 +64,36 @@ pub struct Emu {
     // Memory
     rom: [u16; 0x8000],
     ram: [u16; 0x8000],
-}
 
-pub fn disassemble(opcode: u16) -> String {
-    let mut res = String::new();
-
-    if ((opcode >> 15) & 1) == 1 {
-        let comp = (opcode & 0x1fc0) >> 6;
-        let dest = (opcode & 0x0038) >> 3;
-        let jump = (opcode & 0x0003) >> 0;
-        
-        let comp_str = match comp {
-
-            /**/ 0x2a => "0",
-            /**/ 0x3f => "1",
-            /**/ 0x3a => "-1",
-            /**/ 0x0c => "D",
-            /**/ 0x30 => "A",
-            /**/ 0x0d => "!D",
-            /**/ 0x31 => "!A",
-            /**/ 0x0f => "-D",
-            /**/ 0x33 => "A",
-            /**/ 0x1f => "D+1",
-            /**/ 0x37 => "A+1",
-            /**/ 0x0e => "D-1",
-            /**/ 0x32 => "A-1",
-            /**/ 0x02 => "D+A",
-            /**/ 0x23 => "D-A",
-            /**/ 0x07 => "A-D",
-            /**/ 0x00 => "D&A",
-            /**/ 0x15 => "D|A",
-            /**/ 0x70 => "M",
-            /**/ 0x71 => "!M",
-            /**/ 0x73 => "-M",
-            /**/ 0x77 => "M+1",
-            /**/ 0x72 => "M-1",
-            /**/ 0x42 => "D+M",
-            /**/ 0x53 => "D-M",
-            /**/ 0x47 => "M-D",
-            /**/ 0x40 => "D&M",
-            /**/ 0x55 => "D|M",
-            _ => "?"
-        };
-
-        let dest_str = match dest {
-            0x00 => "",
-            0x01 => "M",
-            0x02 => "D",
-            0x03 => "MD",
-            0x04 => "A",
-            0x05 => "AM",
-            0x06 => "AD",
-            0x07 => "AMD",
-            _ => "?"
-        };
-        
-        let jump_str = match jump {
-             0x00 => "",
-             0x01 => "JGT",
-             0x02 => "JEQ",
-             0x03 => "JGE",
-             0x04 => "JLT",
-             0x05 => "JNE",
-             0x06 => "JLE",
-             0x07 => "JMP",
-            _ => "?",
-        };
-        
-        res.push_str(dest_str);
-        res.push_str("=");
-        res.push_str(comp_str);
-        res.push_str(";");
-        res.push_str(jump_str);
-
-    } else {
-        res.push_str("@");
-        res.push_str(&(opcode&0x7fff).to_string());
-    }
-    res
+    // Debug
+    pause: bool,
 }
 
 #[wasm_bindgen]
 impl Emu {
+
+    // FIXME: How to get this to run self.tick()?
+    pub fn zelda_run(&self) -> Result<(), JsValue> {
+        let f = Rc::new(RefCell::new(None));
+        let g = f.clone();
+        let mut i = 0;
+
+        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+            if i > 300 {
+                body().set_text_content(Some("All done!"));
+                let _ = f.borrow_mut().take();
+                return;
+            }
+            
+            i += 1;
+            let text = format!("requestAnimationFrame called {} times.", i);
+            body().set_text_content(Some(&text));
+            request_animation_frame(f.borrow().as_ref().unwrap());
+
+        }) as Box<dyn FnMut()>));
+        request_animation_frame(g.borrow().as_ref().unwrap());
+        Ok(())
+    }
 
     pub fn new() -> Emu {
         Emu {
@@ -132,15 +104,21 @@ impl Emu {
             // Memory
             rom: [0; 0x8000],
             ram: [0; 0x8000],
+
+            // Debug
+            pause: false,
         }
     }
 
-    pub fn step_forward(&mut self) {
-        self.tick();
+    pub fn pause(&mut self) {
+        self.pause = true;
     }
 
-    pub fn set_pc(&mut self, x: u16) {
-        self.pc = x;
+    pub fn continue_execution(&mut self) {
+        for _i in 0..1000 {
+            if self.pause == true { return; }
+            self.tick();
+        }
     }
 
     pub fn reset(&mut self) {
@@ -154,7 +132,6 @@ impl Emu {
         self.rd = 0;
         self.rm = 0;
     }
-
 
     pub fn load_rom(&mut self, code: &str) {
         
@@ -180,10 +157,7 @@ impl Emu {
         if addr < 0x8000 {
             self.ram[addr as usize] = val;
             
-            // ~~~~~~~~~~~~~~~~~~~~IMPORTANT~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            // TODO(abhay): Check if sending words is better than pixels.
-            // UPDATE: Yes, we will need to use words for debug tools.
-            // So shift this stuff to JS and only send modifying words.
+            // TODO(abhay): Send words instead of pixels.
             
             if addr>=0x4000 {
                 let row = (addr-0x4000)/32;
@@ -238,14 +212,14 @@ impl Emu {
                 _ => {1337}
             };
 
-            // TODO(abhay): The order of statements below matter.
-            // DON'T change them. Find a better way to implement M.
+            // NOTE
             //
+            // The order of statements below matter. DON'T change them.
             // For example: In AM=M+1, if you do A=M+1 before M=M+1,
             // M=M+1 will use M updated by A=M+1, because M depends on A.
             //
             match dest {
-                /* NOP */ 0x00 => {},
+                /*     */ 0x00 => {},
                 /* A   */ 0x01 => {
                 /*     */     self.store_ram(self.ra, comp_res);
                 /*     */ },
@@ -271,9 +245,8 @@ impl Emu {
                 /*     */     self.store_ram(self.ra, comp_res);
                 /*     */     self.ra = comp_res;
                 /*     */     self.rd = comp_res;
-                /*     */
                 /*     */ },
-                _ => {}
+                /*     */ _ => {}
             };
 
             let jump_res = match jump {
@@ -297,10 +270,96 @@ impl Emu {
         }
 
         self.pc += 1;
-        put_op(&format!("{}: {}", self.pc, disassemble(self.rom[self.pc as usize])));
-        put_regs(&format!("PC: {} <br> A: {} <br> M: {} <br> D: {}", self.pc, self.ra, self.rm, self.rd));
 
-        // NOTE: For diffing with the original CPUEmulator
-        //log(&format!("Inst: {:#06X}; PC: {:#06X}; A: {:#06X}; D: {:#06X}", self.rom[(self.pc-1) as usize], self.pc, self.ra, self.rd));
+// ----------------------------- Debug output ----------------------------- //
+        
+        put_op(&format!("{}: {}", self.pc,
+                disassemble(self.rom[self.pc as usize])));
+        put_regs(&format!("PC: {} <br> A: {} <br> M: {} <br> D: {}",
+                self.pc, self.ra, self.rm, self.rd));
+        /*
+        log(&format!("Inst: {:#06X}; PC: {:#06X}; A: {:#06X}; D: {:#06X}",
+            self.rom[(self.pc-1) as usize], self.pc, self.ra, self.rd));
+        */
     }
+}
+
+// ------------------------------ Disassember ----------------------------- //
+
+pub fn disassemble(opcode: u16) -> String {
+    let mut res = String::new();
+
+    if ((opcode >> 15) & 1) == 1 {
+        let comp = (opcode & 0x1fc0) >> 6;
+        let dest = (opcode & 0x0038) >> 3;
+        let jump = (opcode & 0x0003) >> 0;
+        
+        let comp_str = match comp {
+            0x2a => "0",
+            0x3f => "1",
+            0x3a => "-1",
+            0x0c => "D",
+            0x30 => "A",
+            0x0d => "!D",
+            0x31 => "!A",
+            0x0f => "-D",
+            0x33 => "A",
+            0x1f => "D+1",
+            0x37 => "A+1",
+            0x0e => "D-1",
+            0x32 => "A-1",
+            0x02 => "D+A",
+            0x23 => "D-A",
+            0x07 => "A-D",
+            0x00 => "D&A",
+            0x15 => "D|A",
+            0x70 => "M",
+            0x71 => "!M",
+            0x73 => "-M",
+            0x77 => "M+1",
+            0x72 => "M-1",
+            0x42 => "D+M",
+            0x53 => "D-M",
+            0x47 => "M-D",
+            0x40 => "D&M",
+            0x55 => "D|M",
+            _ => "?"
+        };
+
+        let dest_str = match dest {
+            0x00 => "",
+            0x01 => "M",
+            0x02 => "D",
+            0x03 => "MD",
+            0x04 => "A",
+            0x05 => "AM",
+            0x06 => "AD",
+            0x07 => "AMD",
+            _ => "?"
+        };
+        
+        let jump_str = match jump {
+             0x00 => "",
+             0x01 => "JGT",
+             0x02 => "JEQ",
+             0x03 => "JGE",
+             0x04 => "JLT",
+             0x05 => "JNE",
+             0x06 => "JLE",
+             0x07 => "JMP",
+            _ => "?",
+        };
+        
+        res.push_str(dest_str);
+        res.push_str("=");
+        res.push_str(comp_str);
+        res.push_str(";");
+        res.push_str(jump_str);
+    }
+
+    else {
+        res.push_str("@");
+        res.push_str(&(opcode&0x7fff).to_string());
+    }
+    res
 }
