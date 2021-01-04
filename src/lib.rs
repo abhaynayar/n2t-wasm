@@ -1,59 +1,6 @@
-use std::rc::Rc;
-use std::cell::RefCell;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
-// ------------------------------- WebSys --------------------------------- //
-
-fn window() -> web_sys::Window {
-    web_sys::window().expect("no global `window` exists")
-}
-
-fn request_animation_frame(f: &Closure<dyn FnMut()>) {
-    window()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
-}
-
-fn document() -> web_sys::Document {
-    window()
-        .document()
-        .expect("should have a document on window")
-}
-
-fn body() -> web_sys::HtmlElement {
-    document().body().expect("document should have a body")
-}
-
-// ------------------------------ Externs --------------------------------- //
-
-// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
-// allocator.
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-#[wasm_bindgen]
-extern {
-    fn alert(s: &str);
-}
-
-#[wasm_bindgen]
-extern "C" {
-    // Use `js_namespace` here to bind `console.log(..)` instead of just
-    // `log(..)`
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
-
-#[wasm_bindgen(raw_module="../www/index.js")]
-extern "C" {
-    fn put_xy(x: u16, y: u16, set: u16);
-    fn put_op(x: &str);
-    fn put_regs(x: &str);
-}
-
-// ----------------------------- Emulator --------------------------------- //
+// ----------------------------- Emulator ------------------------------- //
 
 #[wasm_bindgen]
 pub struct Emu {
@@ -71,30 +18,6 @@ pub struct Emu {
 
 #[wasm_bindgen]
 impl Emu {
-
-    // FIXME: How to get this to run self.tick()?
-    pub fn zelda_run(&self) -> Result<(), JsValue> {
-        let f = Rc::new(RefCell::new(None));
-        let g = f.clone();
-        let mut i = 0;
-
-        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-            if i > 300 {
-                body().set_text_content(Some("All done!"));
-                let _ = f.borrow_mut().take();
-                return;
-            }
-            
-            i += 1;
-            let text = format!("requestAnimationFrame called {} times.", i);
-            body().set_text_content(Some(&text));
-            request_animation_frame(f.borrow().as_ref().unwrap());
-
-        }) as Box<dyn FnMut()>));
-        request_animation_frame(g.borrow().as_ref().unwrap());
-        Ok(())
-    }
-
     pub fn new() -> Emu {
         Emu {
             // Registers
@@ -134,16 +57,13 @@ impl Emu {
     }
 
     pub fn load_rom(&mut self, code: &str) {
-        
        let mut line_counter = 0;
         for line in code.lines() {
             let mut opcode: u16 = 0;
-
             for (i,c) in line.chars().enumerate() {
                 let current_bit = c as u16 - '0' as u16;
                 opcode |= current_bit << (15-i);
             }
-
             self.rom[line_counter] = opcode;
             line_counter += 1;
         }
@@ -156,9 +76,8 @@ impl Emu {
     pub fn store_ram(&mut self, addr: u16, val: u16) {
         if addr < 0x8000 {
             self.ram[addr as usize] = val;
-            
             // TODO(abhay): Send words instead of pixels.
-            
+            /*
             if addr>=0x4000 {
                 let row = (addr-0x4000)/32;
                 let col = (addr-0x4000)%32;
@@ -167,6 +86,23 @@ impl Emu {
                     put_xy(col+i, row, set);
                 }
             }
+            */
+        }
+    }
+    
+    pub fn draw(&mut self, frame: &mut [u8]) {
+        
+        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+            let is_pixel_set = 
+                (self.load_ram(0x4000 + (i/16) as u16) >> (i%16)) & 1;
+            
+            let rgba = if is_pixel_set != 0 {
+                [0x00, 0x00, 0x00, 0xff]
+            } else {
+                [0xff, 0xff, 0xff, 0xff]
+            };
+    
+            pixel.copy_from_slice(&rgba);
         }
     }
 
@@ -194,9 +130,9 @@ impl Emu {
                 /* A+1 */ 0x37 => (self.ra as i16).wrapping_add(1) as u16,
                 /* D-1 */ 0x0e => (self.rd as i16).wrapping_sub(1) as u16,
                 /* A-1 */ 0x32 => (self.ra as i16).wrapping_sub(1) as u16,
-                /* D+A */ 0x02 => ((self.rd as i16) + (self.ra as i16)) as u16,
-                /* D-A */ 0x23 => ((self.rd as i16) - (self.ra as i16)) as u16,
-                /* A-D */ 0x07 => ((self.ra as i16) - (self.rd as i16)) as u16,
+                /* D+A */ 0x02 => ((self.rd as i16).wrapping_add(self.ra as i16)) as u16,
+                /* D-A */ 0x23 => ((self.rd as i16).wrapping_sub(self.ra as i16)) as u16,
+                /* A-D */ 0x07 => ((self.ra as i16).wrapping_sub(self.rd as i16)) as u16,
                 /* D&A */ 0x00 => self.rd & self.ra,
                 /* D|A */ 0x15 => self.rd | self.ra,
                 /*  M  */ 0x70 => self.rm,
@@ -204,20 +140,19 @@ impl Emu {
                 /* -M  */ 0x73 => -(self.rm as i16) as u16,
                 /* M+1 */ 0x77 => (self.rm as i16).wrapping_add(1) as u16,
                 /* M-1 */ 0x72 => (self.rm as i16).wrapping_sub(1) as u16,
-                /* D+M */ 0x42 => ((self.rd as i16) + (self.rm as i16)) as u16,
-                /* D-M */ 0x53 => ((self.rd as i16) - (self.rm as i16)) as u16,
-                /* M-D */ 0x47 => ((self.rm as i16) - (self.rd as i16)) as u16,
+                /* D+M */ 0x42 => ((self.rd as i16).wrapping_add(self.rm as i16)) as u16,
+                /* D-M */ 0x53 => ((self.rd as i16).wrapping_sub(self.rm as i16)) as u16,
+                /* M-D */ 0x47 => ((self.rm as i16).wrapping_sub(self.rd as i16)) as u16,
                 /* D&M */ 0x40 => self.rd & self.rm,
                 /* D|M */ 0x55 => self.rd | self.rm,
                 _ => {1337}
             };
 
-            // NOTE
-            //
+            // NOTE:
             // The order of statements below matter. DON'T change them.
             // For example: In AM=M+1, if you do A=M+1 before M=M+1,
             // M=M+1 will use M updated by A=M+1, because M depends on A.
-            //
+            
             match dest {
                 /*     */ 0x00 => {},
                 /* A   */ 0x01 => {
@@ -270,21 +205,104 @@ impl Emu {
         }
 
         self.pc += 1;
+        //println!("Inst: {:#06X}; PC: {:#06X}; A: {:#06X}; D: {:#06X}", self.rom[(self.pc-1) as usize], self.pc, self.ra, self.rd);
 
-// ----------------------------- Debug output ----------------------------- //
+// ---------------------- WASM Debug output ----------------------------- //
         
+        /*
         put_op(&format!("{}: {}", self.pc,
                 disassemble(self.rom[self.pc as usize])));
+        
         put_regs(&format!("PC: {} <br> A: {} <br> M: {} <br> D: {}",
                 self.pc, self.ra, self.rm, self.rd));
-        /*
+        
         log(&format!("Inst: {:#06X}; PC: {:#06X}; A: {:#06X}; D: {:#06X}",
             self.rom[(self.pc-1) as usize], self.pc, self.ra, self.rd));
         */
+
     }
+
+// ------------------ Trying to fix render loop ------------------------- //
+    
+    /*
+    // TODO(abhay): How to get this to run self.tick()?
+    pub fn zelda_run(&self) -> Result<(), JsValue> {
+        let f = Rc::new(RefCell::new(None));
+        let g = f.clone();
+        let mut i = 0;
+
+        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+            if i > 300 {
+                body().set_text_content(Some("All done!"));
+                let _ = f.borrow_mut().take();
+                return;
+            }
+            
+            i += 1;
+            let text = format!("requestAnimationFrame called {} times.", i);
+            body().set_text_content(Some(&text));
+            request_animation_frame(f.borrow().as_ref().unwrap());
+
+        }) as Box<dyn FnMut()>));
+        request_animation_frame(g.borrow().as_ref().unwrap());
+        Ok(())
+    }
+    */
 }
 
-// ------------------------------ Disassember ----------------------------- //
+/*
+
+use std::rc::Rc;
+use std::cell::RefCell;
+use wasm_bindgen::JsCast;
+
+// ----------------------------- WebSys --------------------------------- //
+
+fn window() -> web_sys::Window {
+    web_sys::window().expect("no global `window` exists")
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+    window()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
+fn document() -> web_sys::Document {
+    window()
+        .document()
+        .expect("should have a document on window")
+}
+
+fn body() -> web_sys::HtmlElement {
+    document().body().expect("document should have a body")
+}
+
+// ---------------------------- Externs --------------------------------- //
+
+#[cfg(feature = "wee_alloc")]
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+#[wasm_bindgen]
+extern {
+    fn alert(s: &str);
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
+
+#[wasm_bindgen(raw_module="../www/index.js")]
+extern "C" {
+    fn put_xy(x: u16, y: u16, set: u16);
+    fn put_op(x: &str);
+    fn put_regs(x: &str);
+}
+
+// ---------------------------- Disassembler ---------------------------- //
 
 pub fn disassemble(opcode: u16) -> String {
     let mut res = String::new();
@@ -363,3 +381,5 @@ pub fn disassemble(opcode: u16) -> String {
     }
     res
 }
+
+*/
