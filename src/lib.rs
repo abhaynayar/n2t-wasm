@@ -1,6 +1,30 @@
 use wasm_bindgen::prelude::*;
 
-// ----------------------------- Emulator ------------------------------- //
+// ----------------------------- Externs --------------------------------- //
+
+#[cfg(feature = "wee_alloc")]
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+#[wasm_bindgen]
+extern {
+    fn alert(s: &str);
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
+
+#[wasm_bindgen(raw_module="../www/index.js")]
+extern "C" {
+    fn put_xy(addr: u16, value: u16);
+    fn put_op(x: &str);
+    fn put_regs(x: &str);
+}
+
+// ------------------------------ Emulator ------------------------------- //
 
 #[wasm_bindgen]
 pub struct Emu {
@@ -13,6 +37,7 @@ pub struct Emu {
     ram: [u16; 0x8000],
 
     // Debug
+    cycle: u64,
     pause: bool,
 }
 
@@ -29,6 +54,7 @@ impl Emu {
             ram: [0; 0x8000],
 
             // Debug
+            cycle: 0,
             pause: false,
         }
     }
@@ -38,22 +64,28 @@ impl Emu {
     }
 
     pub fn continue_execution(&mut self) {
-        for _i in 0..1000 {
+        for _i in 0..100_000 {
             if self.pause == true { return; }
             self.tick();
         }
+
+        //log(&self.cycle.to_string());
     }
 
     pub fn reset(&mut self) {
-        for i in 0..0x8000 {
-            self.store_ram(i,0);
-            self.rom[0] = 0;
-        }
-
+        // Registers
         self.pc = 0;
         self.ra = 0;
         self.rd = 0;
         self.rm = 0;
+
+        // Memory
+        self.rom.iter_mut().for_each(|x| *x = 0);
+        self.ram.iter_mut().for_each(|x| *x = 0);
+
+        // Debug
+        self.cycle = 0;
+        self.pause = false;
     }
 
     pub fn load_rom(&mut self, code: &str) {
@@ -74,38 +106,16 @@ impl Emu {
     }
 
     pub fn store_ram(&mut self, addr: u16, val: u16) {
-        if addr < 0x8000 {
+        //if addr < 0x8000 {
             self.ram[addr as usize] = val;
-            // TODO(abhay): Send words instead of pixels.
-            /*
-            if addr>=0x4000 {
-                let row = (addr-0x4000)/32;
-                let col = (addr-0x4000)%32;
-                for i in 0..16 {
-                    let set = (val>>(15-i)) & 1;
-                    put_xy(col+i, row, set);
-                }
-            }
-            */
-        }
-    }
-    
-    pub fn draw(&mut self, frame: &mut [u8]) {
-        
-        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-            let is_pixel_set = 
-                (self.load_ram(0x4000 + (i/16) as u16) >> (i%16)) & 1;
-            
-            let rgba = if is_pixel_set != 0 {
-                [0x00, 0x00, 0x00, 0xff]
-            } else {
-                [0xff, 0xff, 0xff, 0xff]
-            };
-    
-            pixel.copy_from_slice(&rgba);
-        }
-    }
 
+            // Only update the canvas if the screen has changed
+            if addr>=0x4000 && addr<0x6000 {
+                put_xy(addr,val);
+            }
+        //}
+    }
+    
     pub fn tick(&mut self) {
         self.rm = self.ram[self.ra as usize];
         let inst = self.rom[self.pc as usize];
@@ -125,7 +135,7 @@ impl Emu {
                 /* !D  */ 0x0d => !self.rd,
                 /* !A  */ 0x31 => !self.ra,
                 /* -D  */ 0x0f => -(self.rd as i16) as u16,
-                /*  A  */ 0x33 => self.ra,
+                /* -A  */ 0x33 => -(self.ra as i16) as u16,
                 /* D+1 */ 0x1f => (self.rd as i16).wrapping_add(1) as u16,
                 /* A+1 */ 0x37 => (self.ra as i16).wrapping_add(1) as u16,
                 /* D-1 */ 0x0e => (self.rd as i16).wrapping_sub(1) as u16,
@@ -205,113 +215,50 @@ impl Emu {
         }
 
         self.pc += 1;
-        //println!("Inst: {:#06X}; PC: {:#06X}; A: {:#06X}; D: {:#06X}", self.rom[(self.pc-1) as usize], self.pc, self.ra, self.rd);
-
-// ---------------------- WASM Debug output ----------------------------- //
+        self.cycle += 1;
         
         /*
+        log(&self.cycle.to_string());
         put_op(&format!("{}: {}", self.pc,
-                disassemble(self.rom[self.pc as usize])));
+            disassemble(self.rom[self.pc as usize])));
         
         put_regs(&format!("PC: {} <br> A: {} <br> M: {} <br> D: {}",
-                self.pc, self.ra, self.rm, self.rd));
-        
+            self.pc, self.ra, self.rm, self.rd));
+
         log(&format!("Inst: {:#06X}; PC: {:#06X}; A: {:#06X}; D: {:#06X}",
             self.rom[(self.pc-1) as usize], self.pc, self.ra, self.rd));
+        
+        println!("Inst: {:#06X}; PC: {:#06X}; A: {:#06X}; D: {:#06X}",
+            self.rom[(self.pc-1) as usize], self.pc, self.ra, self.rd);
         */
-
     }
 
-// ------------------ Trying to fix render loop ------------------------- //
-    
     /*
-    // TODO(abhay): How to get this to run self.tick()?
-    pub fn zelda_run(&self) -> Result<(), JsValue> {
-        let f = Rc::new(RefCell::new(None));
-        let g = f.clone();
-        let mut i = 0;
-
-        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-            if i > 300 {
-                body().set_text_content(Some("All done!"));
-                let _ = f.borrow_mut().take();
-                return;
-            }
-            
-            i += 1;
-            let text = format!("requestAnimationFrame called {} times.", i);
-            body().set_text_content(Some(&text));
-            request_animation_frame(f.borrow().as_ref().unwrap());
-
-        }) as Box<dyn FnMut()>));
-        request_animation_frame(g.borrow().as_ref().unwrap());
-        Ok(())
+    pub fn draw(&mut self, frame: &mut [u8]) {
+        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+            let is_pixel_set = 
+                (self.load_ram(0x4000 + (i/16) as u16) >> (i%16)) & 1;
+            let rgba = if is_pixel_set != 0 {
+                [0x00, 0x00, 0x00, 0xff]
+            } else {
+                [0xff, 0xff, 0xff, 0xff]
+            };
+            pixel.copy_from_slice(&rgba);
+        }
     }
     */
 }
 
-/*
 
-use std::rc::Rc;
-use std::cell::RefCell;
-use wasm_bindgen::JsCast;
-
-// ----------------------------- WebSys --------------------------------- //
-
-fn window() -> web_sys::Window {
-    web_sys::window().expect("no global `window` exists")
-}
-
-fn request_animation_frame(f: &Closure<dyn FnMut()>) {
-    window()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
-}
-
-fn document() -> web_sys::Document {
-    window()
-        .document()
-        .expect("should have a document on window")
-}
-
-fn body() -> web_sys::HtmlElement {
-    document().body().expect("document should have a body")
-}
-
-// ---------------------------- Externs --------------------------------- //
-
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-#[wasm_bindgen]
-extern {
-    fn alert(s: &str);
-}
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
-
-#[wasm_bindgen(raw_module="../www/index.js")]
-extern "C" {
-    fn put_xy(x: u16, y: u16, set: u16);
-    fn put_op(x: &str);
-    fn put_regs(x: &str);
-}
-
-// ---------------------------- Disassembler ---------------------------- //
+// ----------------------------- Disassembler ---------------------------- //
 
 pub fn disassemble(opcode: u16) -> String {
-    let mut res = String::new();
 
+    let mut res = String::new();
     if ((opcode >> 15) & 1) == 1 {
         let comp = (opcode & 0x1fc0) >> 6;
         let dest = (opcode & 0x0038) >> 3;
         let jump = (opcode & 0x0003) >> 0;
-        
         let comp_str = match comp {
             0x2a => "0",
             0x3f => "1",
@@ -321,7 +268,7 @@ pub fn disassemble(opcode: u16) -> String {
             0x0d => "!D",
             0x31 => "!A",
             0x0f => "-D",
-            0x33 => "A",
+            0x33 => "-A",
             0x1f => "D+1",
             0x37 => "A+1",
             0x0e => "D-1",
@@ -343,7 +290,6 @@ pub fn disassemble(opcode: u16) -> String {
             0x55 => "D|M",
             _ => "?"
         };
-
         let dest_str = match dest {
             0x00 => "",
             0x01 => "M",
@@ -355,7 +301,6 @@ pub fn disassemble(opcode: u16) -> String {
             0x07 => "AMD",
             _ => "?"
         };
-        
         let jump_str = match jump {
              0x00 => "",
              0x01 => "JGT",
@@ -367,19 +312,70 @@ pub fn disassemble(opcode: u16) -> String {
              0x07 => "JMP",
             _ => "?",
         };
-        
         res.push_str(dest_str);
         res.push_str("=");
         res.push_str(comp_str);
         res.push_str(";");
         res.push_str(jump_str);
     }
-
     else {
         res.push_str("@");
         res.push_str(&(opcode&0x7fff).to_string());
     }
     res
+}
+
+
+/*
+
+// ----------------------------- Inside Emu ------------------------------ //
+    
+    pub fn zelda_run(&self) -> Result<(), JsValue> {
+        let f = Rc::new(RefCell::new(None));
+        let g = f.clone();
+        let mut i = 0;
+
+        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+            if i > 300 {
+                body().set_text_content(Some("All done!"));
+                let _ = f.borrow_mut().take();
+                return;
+            }
+            
+            i += 1;
+            let text = format!("requestAnimationFrame called {} times.", i);
+            body().set_text_content(Some(&text));
+            request_animation_frame(f.borrow().as_ref().unwrap());
+
+        }) as Box<dyn FnMut()>));
+        request_animation_frame(g.borrow().as_ref().unwrap());
+        Ok(())
+    }
+
+// ------------------------------ WebSys --------------------------------- //
+
+use std::rc::Rc;
+use std::cell::RefCell;
+use wasm_bindgen::JsCast;
+
+fn window() -> web_sys::Window {
+    web_sys::window().expect("no global `window` exists")
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+    window()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
+fn document() -> web_sys::Document {
+    window()
+        .document()
+        .expect("should have a document on window")
+}
+
+fn body() -> web_sys::HtmlElement {
+    document().body().expect("document should have a body")
 }
 
 */

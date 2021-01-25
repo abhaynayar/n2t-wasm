@@ -13,16 +13,26 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use pixels::{Error, Pixels, SurfaceTexture};
 
 use std::fs;
+use std::env;
+use std::process;
 use n2t_wasm::Emu;
 
 fn main() -> Result<(), Error> {
-
+    
+    // Check for command line arguments
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        println!("Usage: n2t-emu [FILE]");
+        process::exit(1);
+    }
+    
     // Reading ROM file
-    let buffer = fs::read_to_string("../roms/Pong.hack").expect("ASDF");
+    let buffer = fs::read_to_string(&args[1])
+        .expect("File doesn't exist");
     
     let mut emu = Emu::new();
     emu.load_rom(&buffer);
-    emu.store_ram(0, 128);
+    emu.store_ram(0, 128); // For Rect.hack
 
     // -------------------------- Game loop ---------------------------- //
     
@@ -52,6 +62,13 @@ fn main() -> Result<(), Error> {
 
     event_loop.run(move |event, _, control_flow| {
         emu.tick();
+        if input.key_held(VirtualKeyCode::Left) {
+            emu.store_ram(24576,130);
+        } else if input.key_held(VirtualKeyCode::Right) {
+            emu.store_ram(24576,132);
+        } else {
+            emu.store_ram(24576,0);
+        }
         
         if let Event::RedrawRequested(_) = event {
             
@@ -80,7 +97,7 @@ fn main() -> Result<(), Error> {
             let now = Instant::now();
             let dt = now.duration_since(time);
             
-            let one_frame = Duration::new(0, 100_000_000);
+            let one_frame = Duration::new(0, 150_000_000);
             if dt > one_frame {
                 time = now;
                 window.request_redraw();
