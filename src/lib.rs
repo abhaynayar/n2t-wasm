@@ -63,39 +63,37 @@ impl Emu {
         for _i in 0..50_000 {
             self.tick();
         }
+
+        self.key_up();
     }
 
     pub fn reset(&mut self) {
-        // Clearing registers
+        // Clear registers
         self.pc = 0;
         self.ra = 0;
         self.rd = 0;
         self.rm = 0;
 
-        // Clearing memory
+        // Clear memory
         for x in 0..self.ram.len() { self.store_ram(x as u16,0); }
 
-        //self.rom.iter_mut().for_each(|x| *x = 0);
-        //self.ram.iter_mut().for_each(|x| *x = 0);
-
-        // Clearing debug tools
+        // Clear debug tools
         self.cycle = 0;
         self.pause = false;
     }
     
     pub fn store_ram(&mut self, addr: u16, val: u16) {
-        //if addr < 0x8000 {
-            self.ram[addr as usize] = val;
+        self.ram[addr as usize] = val;
 
-            // Only update the canvas if the screen has changed
-            if addr>=0x4000 && addr<0x6000 {
-                put_xy(addr,val);
-            }
-        //}
+        // Only update the canvas for addresses in screen memory
+        if addr>=0x4000 && addr<0x6000 {
+            put_xy(addr,val);
+        }
     }
-
+    
     pub fn load_rom(&mut self, code: &str) {
-       let mut line_counter = 0;
+        // TODO: Check if code is empty
+        let mut line_counter = 0;
         for line in code.lines() {
             let mut opcode: u16 = 0;
             for (i,c) in line.chars().enumerate() {
@@ -109,6 +107,14 @@ impl Emu {
 
     pub fn load_ram(&mut self, addr: u16) -> u16 {
         self.ram[addr as usize]
+    }
+ 
+    pub fn key_down(&mut self, code: u16) {
+        self.ram[0x6000] = code;
+    }
+
+    pub fn key_up(&mut self) {
+        self.ram[0x6000] = 0;
     }
 
     pub fn tick(&mut self) {

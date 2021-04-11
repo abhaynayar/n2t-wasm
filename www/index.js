@@ -59,6 +59,10 @@ const emu = Emu.new();
 
 function loadRom() {
     var x = document.getElementById("inputRom").value;
+    if(x == "") {
+        console.log("Please insert ROM");
+        return;
+    }
     emu.reset();
     emu.load_rom(x);
     console.log("Loaded ROM");
@@ -78,14 +82,38 @@ function storeRam() {
 }
 
 var pause = true;
-function playFn() { pause = false }
-function pauseFn() { pause = true; }
-function resetFn() { emu.reset(); console.log("ASDF"); }
+function playFn() { pause = false; console.log("Emulator started"); }
+function pauseFn() { pause = true; console.log("Emulator paused"); }
+function resetFn() { emu.reset(); console.log("Emulator resetted"); }
+
+function checkKey(e) {
+    var event = window.event ? window.event : e;
+    console.log(event.keyCode)
+}
+
+function translate_keycode(x) {
+    switch(x) {
+        case 38:  // Up
+            return 131;
+        case 37:  // Left
+            return 130;
+        case 40:  // Down
+            return 133;
+        case 39:  // Right
+            return 132;
+        default:  // Standard
+            return x;
+    }
+}
+
+document.addEventListener('keydown', (event) => {
+    emu.key_down(translate_keycode(event.keyCode));
+});
+
+//document.addEventListener('keyup', (event) => { emu.key_up(); });
 
 const renderLoop = () => {
-    if (!pause) {
-        emu.continue_execution();
-    }
+    if (!pause) { emu.continue_execution(); }
     requestAnimationFrame(renderLoop);
 };
 
