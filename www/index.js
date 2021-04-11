@@ -2,16 +2,18 @@ import * as wasm from "n2t-wasm";
 import { Emu } from "n2t-wasm";
 import { memory } from "n2t-wasm/n2t_wasm_bg";
 
-// -------------------- Painting on the canvas ------------------------ //
-const scale = 1;
-const width = 512;
+// -------------------- Painting on the canvas ----------------------- //
+
 const height = 256;
+const width = 512;
+const scale = 1;
 
 const canvas = document.getElementById("n2t-wasm-canvas");
 canvas.width = width*scale;
 canvas.height = height*scale;
 
 const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled= false;
 ctx.fillStyle = "#000000";
 
 // ------------------- JavaScript Helper functions ------------------- //
@@ -22,25 +24,24 @@ function dec2bin(dec){
     return n;
 }
 
-// -------------- Export JS Functions called from Rust -------------- //
+// -------------- Export JS Functions called from Rust --------------- //
 
 export function put_xy(address, value) {
 
     // 16 bits per address:
-    //   - width  => 512 => 32 cols
-    //   - height => 256 => 16 rows
+    // - width  => 512 => 32 cols
+    // - height => 256 => 16 rows
 
     // Screen starts at address 0x4000
     var screen = address - 0x4000;
     var x = screen % 32;
     var y = screen / 32;
-    var binary_value = dec2bin(value);
 
     for (var i=15; i>=0; --i) {
         var set = value & (1<<i);
         if (set != 0) ctx.fillStyle = "#000000";
         else ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect((x+(15-i))*scale, y*scale, scale, scale);
+        ctx.fillRect(((x*16)+i)*scale, y*scale, scale, scale);
     }
 }
 
@@ -60,13 +61,13 @@ function loadRom() {
     var x = document.getElementById("inputRom").value;
     emu.reset();
     emu.load_rom(x);
-    console.log("Loaded ROM successfully.");
+    console.log("Loaded ROM");
 }
 
 function loadRam() {
     var x = document.getElementById("ram_address").value;
     document.getElementById("ram_value").value = emu.load_ram(x);
-    console.log("Loaded RAM successfully.");
+    console.log("Loaded RAM");
 }
 
 function storeRam() {
@@ -76,27 +77,14 @@ function storeRam() {
     console.log("Stored value: " + y + ", in address: " + x);
 }
 
-function resetFn() {
-    emu.reset();
-    console.log("Emulator resetted successfully.");
-}
-
-function stepFn() {
-    emu.tick();
-}
-
-function continueExecution() {
-    //emu.continue_execution();
-    requestAnimationFrame(renderLoop);
-}
-
 var pause = true;
-function pauseFn() { pause = true; }
 function playFn() { pause = false }
+function pauseFn() { pause = true; }
+function resetFn() { emu.reset(); console.log("ASDF"); }
 
 const renderLoop = () => {
     if (!pause) {
-        emu.tick();
+        emu.continue_execution();
     }
     requestAnimationFrame(renderLoop);
 };

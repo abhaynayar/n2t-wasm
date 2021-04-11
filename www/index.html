@@ -2,6 +2,24 @@
 <html>
 <head>
 
+<style>
+body {
+    font-family: monospace;
+}
+
+td {
+    border: 1px solid black;
+    text-align: center;
+    padding: 5px;
+}
+
+/*
+canvas {
+    border: 1px solid black;
+}
+*/
+</style>
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta charset="utf-8">
 <title>Hello n2t-wasm!</title>
@@ -15,12 +33,11 @@
 </head>
 <body>
 
-<noscript>This page contains webassembly and javascript content, please enable
-javascript in your browser.</noscript>
+<noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
 
-<table border="1">
+<table>
 <tr><td colspan="3">
-<canvas id="n2t-wasm-canvas" style="border:1px solid black"></canvas>
+<canvas id="n2t-wasm-canvas"></canvas>
 </td>
 
 </tr>
@@ -29,31 +46,6 @@ javascript in your browser.</noscript>
 <td>
 <h3>ROM</h3>
 <textarea id="inputRom"rows="12" cols="24" style="resize:none">
-0000000000000000
-1111110000010000
-0000000000010111
-1110001100000110
-0000000000010000
-1110001100001000
-0100000000000000
-1110110000010000
-0000000000010001
-1110001100001000
-0000000000010001
-1111110000100000
-1110111010001000
-0000000000010001
-1111110000010000
-0000000000100000
-1110000010010000
-0000000000010001
-1110001100001000
-0000000000010000
-1111110010011000
-0000000000001010
-1110001100000001
-0000000000010111
-1110101010000111
 </textarea><br>
 <button id="loadRomBtn">Load</button>
 </td>
@@ -68,9 +60,9 @@ Value: <input type="text" id="ram_value" size="4"><br>
 
 <td>
 <h3>Debug</h3>
-<button id="playBtn">&gt;&gt;</button>
-<button id="pauseBtn">||</button>
-<button id="resetBtn">&lt;&lt;</button>
+<button id="playBtn">play</button><br>
+<button id="pauseBtn">pause</button><br>
+<button id="resetBtn">reset</button><br>
 <p id="opcodeText">-</p>
 <p id="regsText">-</p>
 </td>

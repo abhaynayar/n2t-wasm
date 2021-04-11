@@ -1,8 +1,4 @@
+tests
+target
 Cargo.lock
-pkg/
-bin/
-target/
-wasm-pack.log
-
-www/dist
 www/node_modules

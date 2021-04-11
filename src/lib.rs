@@ -59,31 +59,39 @@ impl Emu {
         }
     }
 
-    pub fn pause(&mut self) {
-        self.pause = true;
-    }
-
     pub fn continue_execution(&mut self) {
-        for _i in 0..100_000 {
-            if self.pause == true { return; }
+        for _i in 0..50_000 {
             self.tick();
         }
     }
 
     pub fn reset(&mut self) {
-        // Registers
+        // Clearing registers
         self.pc = 0;
         self.ra = 0;
         self.rd = 0;
         self.rm = 0;
 
-        // Memory
-        self.rom.iter_mut().for_each(|x| *x = 0);
-        self.ram.iter_mut().for_each(|x| *x = 0);
+        // Clearing memory
+        for x in 0..self.ram.len() { self.store_ram(x as u16,0); }
 
-        // Debug
+        //self.rom.iter_mut().for_each(|x| *x = 0);
+        //self.ram.iter_mut().for_each(|x| *x = 0);
+
+        // Clearing debug tools
         self.cycle = 0;
         self.pause = false;
+    }
+    
+    pub fn store_ram(&mut self, addr: u16, val: u16) {
+        //if addr < 0x8000 {
+            self.ram[addr as usize] = val;
+
+            // Only update the canvas if the screen has changed
+            if addr>=0x4000 && addr<0x6000 {
+                put_xy(addr,val);
+            }
+        //}
     }
 
     pub fn load_rom(&mut self, code: &str) {
@@ -101,17 +109,6 @@ impl Emu {
 
     pub fn load_ram(&mut self, addr: u16) -> u16 {
         self.ram[addr as usize]
-    }
-
-    pub fn store_ram(&mut self, addr: u16, val: u16) {
-        //if addr < 0x8000 {
-            self.ram[addr as usize] = val;
-
-            // Only update the canvas if the screen has changed
-            if addr>=0x4000 && addr<0x6000 {
-                put_xy(addr,val);
-            }
-        //}
     }
 
     pub fn tick(&mut self) {

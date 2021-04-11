@@ -1,7 +1,6 @@
 ## n2t-wasm
 
-Emulator for the [nand2tetris](https://www.nand2tetris.org/) computer (built
-using Rust and WebAssembly).
+Emulator for the [nand2tetris](https://www.nand2tetris.org/) computer.
 
 ### Screenshot
 
@@ -30,7 +29,7 @@ $ git clone https://github.com/abhaynayar/n2t-wasm
 Building the emulator:
 - Run `wasm-pack build` in the root directory. This will create a new pkg/ directory and build the wasm modules in it.
 - Run `npm init wasm-app www` in the root directory. This will generate a web page in a new www/ directory.
-- Run `npm install` in www directory to install the dependencies.
+- Run `npm install` in www directory to install the node modules.
 - Run `npm run start` in the `www` directory to start a local testing instance.
 - Run `npm run build` in the `www` directory to publish the results to `dist`.
 
