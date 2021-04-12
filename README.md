@@ -16,7 +16,6 @@ Tested on Ubuntu 20.04 LTS.
 Tools setup:
 - Install rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 - Install wasm-pack: `curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`
-- Install cargo-generate: `cargo install cargo-generate`
 - Install node through nvm:
 
 ```
