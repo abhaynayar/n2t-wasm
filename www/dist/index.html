@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<title>Hello n2t-wasm!</title>
+
+<style>
+
+body {
+  font-family: Arial;
+}
+
+canvas {
+  border: 1px solid black;
+}
+
+td {
+  border: 1px solid #ccc;
+  padding: 5px;
+  text-align: center;
+  vertical-align: top;
+}
+
+input[type=text] {
+  width: 130px;
+  margin: 5px;
+  border: 2px solid #aaa;
+  padding: 10px;
+  border-radius: 0;
+}
+
+input:focus {
+  outline: none;
+  border: 2px solid #000;
+}
+
+button {
+  width: 70px;
+  margin: 5px;
+  border: 2px solid #aaa;
+  padding: 7px;
+  border-radius: 0;
+}
+
+button:focus {
+  border: 2px solid #333;
+}
+
+select {
+    margin-top:10px;
+}
+
+</style>
+
+</head>
+<body>
+
+<noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+
+<table>
+
+<tr>
+<td colspan="3">
+  <canvas id="n2t-wasm-canvas"></canvas>
+</td>
+</tr>
+
+<tr>
+
+<td>
+  <h3>Debug</h3>
+  <button id="playBtn">Play</button><br>
+  <button id="pauseBtn">Pause</button><br>
+  <button id="resetBtn">Reset</button><br>
+  <!--<p id="opcodeText">-</p>-->
+  <!--<p id="regsText">-</p>-->
+</td>
+
+<td>
+<h3>ROM</h3>
+
+<select id="romSelect">
+  <option>Pong</option>
+  <option>Rect</option>
+  <option>Fill</option>
+</select>
+<br><br>
+
+<button id="loadRomBtn">Load</button>
+</td>
+
+<td>
+  <h3>RAM</h3>
+  <input type="text" placeholder="Address" id="ram_address" size="4"><br>
+  <input type="text" placeholder="Value" id="ram_value" size="4"><br>
+  <button id="loadRamBtn">Load</button>
+  <button id="storeRamBtn">Store</button>
+</td>
+
+</tr>
+</table>
+<script src="./bootstrap.js"></script>
+
+</body>
+</html>

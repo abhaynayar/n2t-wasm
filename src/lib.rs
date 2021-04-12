@@ -91,6 +91,7 @@ impl Emu {
         }
     }
     
+    // TODO: Sanitize ROM input
     pub fn load_rom(&mut self, code: &str) {
         // TODO: Check if code is empty
         let mut line_counter = 0;

@@ -58,14 +58,18 @@ export function put_regs(x) {
 const emu = Emu.new();
 
 function loadRom() {
-    var x = document.getElementById("inputRom").value;
-    if(x == "") {
-        console.log("Please insert ROM");
-        return;
-    }
-    emu.reset();
-    emu.load_rom(x);
-    console.log("Loaded ROM");
+
+    var romSelect = document.getElementById("romSelect").value;
+
+    Promise.all([
+        fetch('roms/' + romSelect + '.txt').then(x => x.text()),
+    ]).then(([romTxt]) => {
+        console.log(romTxt);
+        emu.reset();
+        emu.load_rom(romTxt);
+        console.log("Loaded ROM");
+    });
+
 }
 
 function loadRam() {
@@ -78,7 +82,7 @@ function storeRam() {
     var x = document.getElementById("ram_address").value;
     var y = document.getElementById("ram_value").value;
     emu.store_ram(x,y);
-    console.log("Stored value: " + y + ", in address: " + x);
+    console.log("Stored value: " + y + ", at address: " + x);
 }
 
 var pause = true;
@@ -93,15 +97,15 @@ function checkKey(e) {
 
 function translate_keycode(x) {
     switch(x) {
-        case 38:  // Up
+        case 38: // Up
             return 131;
-        case 37:  // Left
+        case 37: // Left
             return 130;
-        case 40:  // Down
+        case 40: // Down
             return 133;
-        case 39:  // Right
+        case 39: // Right
             return 132;
-        default:  // Standard
+        default: // Standard
             return x;
     }
 }
