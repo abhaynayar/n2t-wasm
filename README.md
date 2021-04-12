@@ -6,6 +6,9 @@ Emulator for the [nand2tetris](https://www.nand2tetris.org/) computer.
 
 https://abhaynayar.com/n2t-wasm/
 
+![](screen/ezgif.webp)
+![](screen/n2t-wasm.png)
+
 ### Build Instructions
 
 Tested on Ubuntu 20.04 LTS.
