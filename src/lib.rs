@@ -1,15 +1,21 @@
 use wasm_bindgen::prelude::*;
 
-// --------------------------- Externs ------------------------------- //
-
+// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
+// allocator.
 #[cfg(feature = "wee_alloc")]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
-extern {
-    fn alert(s: &str);
-}
+extern { fn alert(s: &str); }
+
+#[wasm_bindgen]
+pub fn greet() { alert("Hello, n2t-wasm!"); }
+
+// ------------------------------------------------------------------------
+
+#[wasm_bindgen(raw_module="../www/index.js")]
+extern "C" { fn put_xy(addr: u16, value: u16); }
 
 #[wasm_bindgen]
 extern "C" {
@@ -17,83 +23,143 @@ extern "C" {
     fn log(s: &str);
 }
 
-#[wasm_bindgen(raw_module="../www/index.js")]
-extern "C" {
-    fn put_xy(addr: u16, value: u16);
-    fn put_op(x: &str);
-    fn put_regs(x: &str);
-}
-
-// ---------------------------- Emulator ----------------------------- //
-
 #[wasm_bindgen]
 pub struct Emu {
-    // Registers
+    // Registers:
     pc: u16, ra: u16,
     rd: u16, rm: u16,
 
-    // Memory
+    // Memory:
     rom: [u16; 0x8000],
-    ram: [u16; 0x8000],
+    ram: [u16; 0x6000+1],
 
-    // Debug
-    cycle: u64,
-    pause: bool,
+    // ALU:
+    x: u16, y: u16,
+    zr: bool, ng: bool,
 }
 
 #[wasm_bindgen]
 impl Emu {
     pub fn new() -> Emu {
         Emu {
-            // Registers
+            // Registers:
             pc: 0, ra: 0,
             rd: 0, rm: 0,
-
-            // Memory
+            
+            // Memory:
             rom: [0; 0x8000],
-            ram: [0; 0x8000],
+            ram: [0; 0x6000+1],
 
-            // Debug
-            cycle: 0,
-            pause: false,
+            // ALU:
+            x: 0, y: 0,
+            zr: false, ng: false,
         }
     }
 
-    pub fn continue_execution(&mut self) {
-        for _i in 0..50_000 {
-            self.tick();
-        }
+    pub fn alu(&mut self, comp:u16) -> u16 {
+        // Input:  x,y, { zx,nx,zy,ny,f,no }
+        // Output: out, { zr,ng } -> wasm doesn't allow returning this
 
-        self.key_up();
-    }
+        // Extract comp bits:
+        let zx = (comp>>5)&1;
+        let nx = (comp>>4)&1;
+        let zy = (comp>>3)&1;
+        let ny = (comp>>2)&1;
+        let f  = (comp>>1)&1;
+        let no = (comp>>0)&1;
 
-    pub fn reset(&mut self) {
-        // Clear registers
-        self.pc = 0;
-        self.ra = 0;
-        self.rd = 0;
-        self.rm = 0;
+        // Compute output:
+        if zx == 1 { self.x = 0 }
+        if nx == 1 { self.x = !self.x }
+        if zy == 1 { self.y = 0 }
+        if ny == 1 { self.y = !self.y }
+        let mut out = if f==1 {
+            self.x + self.y
+        } else {
+            self.x & self.y
+        };
+        if no == 1 { out = !out }
 
-        // Clear memory
-        for x in 0..self.ram.len() { self.store_ram(x as u16,0); }
+        // Flags:
+        self.zr = out==0;
+        self.ng = (out>>15)&1 == 1;
 
-        // Clear debug tools
-        self.cycle = 0;
-        self.pause = false;
+        return out;
     }
     
-    pub fn store_ram(&mut self, addr: u16, val: u16) {
-        self.ram[addr as usize] = val;
+    pub fn tick(&mut self) {
 
-        // Only update the canvas for addresses in screen memory
-        if addr>=0x4000 && addr<0x6000 {
-            put_xy(addr,val);
+        if self.ra <= 0x6000+1 {
+            self.rm = self.ram[self.ra as usize];
+        }
+        
+        let inst = self.rom[self.pc as usize];
+
+        //log(&format!("ra: {}, rd: {}, rm: {}, inst: {}",
+        //    self.ra,
+        //    self.rd,
+        //    self.rm,
+        //    inst,
+        //    //disassemble(inst)
+        //));
+
+        // A Instructions:
+        if inst >> 15 == 0 {
+            self.ra = inst;
+            self.pc += 1;
+        }
+
+        // C Instructions:
+        // 111ACCCCCCDDDJJJ
+        else {
+            let a_bit = (inst>>12) & 1;
+            let comp = (inst & 0x1fc0) >> 6;
+            let dest = (inst & 0x0038) >> 3;
+            let jump = (inst & 0x0007) >> 0;
+
+            // ALU takes D and M/A as input.
+            // First input "x": D.
+            self.x = self.rd;
+            
+            // 12th bit is a control bit for second input "y": M/A.
+            // If it is 1 then we send M to the ALU, else we send A.
+            if a_bit == 1 {
+                self.y = self.ram[self.ra as usize];
+            } else {
+                self.y = self.ra;
+            };
+
+            // Get the ALU to compute.
+            let alu_res = self.alu(comp);
+
+            // ALU output goes into registers decided by dest bits.
+            if (dest>>0)&1 == 1 { self.store_ram(self.ra, alu_res); }
+            if (dest>>1)&1 == 1 { self.rd = alu_res; }
+            if (dest>>2)&1 == 1 { self.ra = alu_res; }
+
+            // First, determine if we are going to jump:
+            let jump_res = match jump {
+                0x00 => false,
+                0x01 => !(self.zr || self.ng),  // JGT
+                0x02 => self.zr,                // JEQ
+                0x03 => !self.ng,               // JGE
+                0x04 => self.ng,                // JLT
+                0x05 => !self.zr,               // JNE
+                0x06 => self.ng || self.zr,     // JLE
+                0x07 => true,                   // JMP
+                   _ => true,
+            };
+
+            // Then, jump (or increment):
+            self.pc = if jump_res {
+                self.ra
+            } else {
+                self.pc+1
+            };
         }
     }
-    
-    // TODO: Sanitize ROM input
+
     pub fn load_rom(&mut self, code: &str) {
-        // TODO: Check if code is empty
         let mut line_counter = 0;
         for line in code.lines() {
             let mut opcode: u16 = 0;
@@ -101,131 +167,28 @@ impl Emu {
                 let current_bit = c as u16 - '0' as u16;
                 opcode |= current_bit << (15-i);
             }
-            self.rom[line_counter] = opcode;
+            self.rom[line_counter] = opcode as u16;
             line_counter += 1;
         }
     }
-
-    pub fn load_ram(&mut self, addr: u16) -> u16 {
-        self.ram[addr as usize]
-    }
- 
-    pub fn key_down(&mut self, code: u16) {
-        self.ram[0x6000] = code;
-    }
-
-    pub fn key_up(&mut self) {
-        self.ram[0x6000] = 0;
-    }
-
-    pub fn tick(&mut self) {
-        self.rm = self.ram[self.ra as usize];
-        let inst = self.rom[self.pc as usize];
-        if inst >> 15 == 1 {
-
-            // C Instructions (dest=comp;jump)
-            let comp = (inst & 0x1fc0) >> 6;
-            let dest = (inst & 0x0038) >> 3;
-            let jump = (inst & 0x0007) >> 0;
-            let comp_res: u16 = match comp {
-
-                /*  0  */ 0x2a => 0,
-                /*  1  */ 0x3f => 1,
-                /* -1  */ 0x3a => 0xffff, //-(1 as i16) as u16,
-                /*  D  */ 0x0c => self.rd,
-                /*  A  */ 0x30 => self.ra,
-                /* !D  */ 0x0d => !self.rd,
-                /* !A  */ 0x31 => !self.ra,
-                /* -D  */ 0x0f => -(self.rd as i16) as u16,
-                /* -A  */ 0x33 => -(self.ra as i16) as u16,
-                /* D+1 */ 0x1f => (self.rd as i16).wrapping_add(1) as u16,
-                /* A+1 */ 0x37 => (self.ra as i16).wrapping_add(1) as u16,
-                /* D-1 */ 0x0e => (self.rd as i16).wrapping_sub(1) as u16,
-                /* A-1 */ 0x32 => (self.ra as i16).wrapping_sub(1) as u16,
-                /* D+A */ 0x02 => ((self.rd as i16).wrapping_add(self.ra as i16)) as u16,
-                /* D-A */ 0x23 => ((self.rd as i16).wrapping_sub(self.ra as i16)) as u16,
-                /* A-D */ 0x07 => ((self.ra as i16).wrapping_sub(self.rd as i16)) as u16,
-                /* D&A */ 0x00 => self.rd & self.ra,
-                /* D|A */ 0x15 => self.rd | self.ra,
-                /*  M  */ 0x70 => self.rm,
-                /* !M  */ 0x71 => !self.rm,
-                /* -M  */ 0x73 => -(self.rm as i16) as u16,
-                /* M+1 */ 0x77 => (self.rm as i16).wrapping_add(1) as u16,
-                /* M-1 */ 0x72 => (self.rm as i16).wrapping_sub(1) as u16,
-                /* D+M */ 0x42 => ((self.rd as i16).wrapping_add(self.rm as i16)) as u16,
-                /* D-M */ 0x53 => ((self.rd as i16).wrapping_sub(self.rm as i16)) as u16,
-                /* M-D */ 0x47 => ((self.rm as i16).wrapping_sub(self.rd as i16)) as u16,
-                /* D&M */ 0x40 => self.rd & self.rm,
-                /* D|M */ 0x55 => self.rd | self.rm,
-                _ => {1337}
-            };
-
-            // NOTE:
-            // The order of statements below matter. DON'T change them.
-            // For example: In AM=M+1, if you do A=M+1 before M=M+1,
-            // M=M+1 will use M updated by A=M+1, because M depends on A.
-            
-            match dest {
-                /*     */ 0x00 => {},
-                /* A   */ 0x01 => {
-                /*     */     self.store_ram(self.ra, comp_res);
-                /*     */ },
-                /* D   */ 0x02 => {
-                /*     */     self.rd = comp_res;
-                /*     */ },
-                /* MD  */ 0x03 => {
-                /*     */     self.store_ram(self.ra, comp_res);
-                /*     */     self.rd = comp_res;
-                /*     */ },
-                /* A   */ 0x04 => {
-                /*     */     self.ra = comp_res;
-                /*     */ },
-                /* AM  */ 0x05 => {
-                /*     */     self.store_ram(self.ra, comp_res);
-                /*     */     self.ra = comp_res;
-                /*     */ },
-                /* AD  */ 0x06 => {
-                /*     */     self.ra = comp_res;
-                /*     */     self.rd = comp_res;
-                /*     */ },
-                /* AMD */ 0x07 => {
-                /*     */     self.store_ram(self.ra, comp_res);
-                /*     */     self.ra = comp_res;
-                /*     */     self.rd = comp_res;
-                /*     */ },
-                /*     */ _ => {}
-            };
-
-            let jump_res = match jump {
-                /* INC */ 0x00 => false, // pc += 1
-                /* JGT */ 0x01 => (comp_res as i16) > 0,
-                /* JEQ */ 0x02 => (comp_res as i16) == 0,
-                /* JGE */ 0x03 => (comp_res as i16) >= 0,
-                /* JLT */ 0x04 => (comp_res as i16) < 0,
-                /* JNE */ 0x05 => (comp_res as i16) != 0,
-                /* JLE */ 0x06 => (comp_res as i16) <= 0,
-                /* JMP */ 0x07 => true, // Unconditional
-                _ => {false}
-            };
-
-            if jump_res == true {
-                self.pc = self.ra-1;
-            }
-        } else {
-            // A Instructions
-            self.ra = inst & 0x7fff;
+    
+    pub fn store_ram(&mut self, address: u16, value: u16) {
+        self.ram[address as usize] = value;
+        // Only update the canvas for addresses in screen memory
+        if address>=0x4000 && address<0x6000 {
+            put_xy(address,value);
         }
+    }
 
-        self.pc += 1;
-        self.cycle += 1;
+    pub fn run(&mut self) {
+        //self.store_ram(0,100);
+        for _i in 0..10_000 {
+            self.tick();
+        }
     }
 }
 
-
-// --------------------------- Disassembler -------------------------- //
-
 pub fn disassemble(opcode: u16) -> String {
-
     let mut res = String::new();
     if ((opcode >> 15) & 1) == 1 {
         let comp = (opcode & 0x1fc0) >> 6;
@@ -284,6 +247,7 @@ pub fn disassemble(opcode: u16) -> String {
              0x07 => "JMP",
             _ => "?",
         };
+        
         res.push_str(dest_str);
         res.push_str("=");
         res.push_str(comp_str);
@@ -293,5 +257,6 @@ pub fn disassemble(opcode: u16) -> String {
         res.push_str("@");
         res.push_str(&(opcode&0x7fff).to_string());
     }
+    
     res
 }

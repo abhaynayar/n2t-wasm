@@ -1,4 +1,6 @@
-tests
-target
+/target
+**/*.rs.bk
 Cargo.lock
-www/node_modules
+bin/
+pkg/
+wasm-pack.log
