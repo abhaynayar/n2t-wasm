@@ -1,10 +1,10 @@
-## n2t-wasm
+## Nebulous
 
-Emulator for the [nand2tetris](https://www.nand2tetris.org/) computer.
+Emulator for the Hack CPU. (from [nand2tetris](https://www.nand2tetris.org/))
 
 ### Demo
 
-https://abhaynayar.com/n2t-wasm/
+https://abhaynayar.github.io/n2t-wasm/
 
 ### Build Instructions
 
