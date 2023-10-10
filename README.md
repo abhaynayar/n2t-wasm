@@ -1,4 +1,4 @@
-## Nebulous
+## n2t-wasm
 
 Emulator for the Hack CPU. (from [nand2tetris](https://www.nand2tetris.org/))
 
