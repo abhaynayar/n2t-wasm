@@ -13,17 +13,13 @@ If you'd like to try other Hack programs, you can search for them online, or lea
 
 ### Build Instructions
 
-Tested on Ubuntu 20.04 LTS.
+Tested on Ubuntu 24.04 LTS.
 
 Tools setup:
 - Install rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- Install wasm-pack: `curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`
-- Install node through nvm:
-
-```
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.35.3/install.sh | bash
-nvm install node
-```
+- Install C build toolchain: `sudo apt install -y build-essential pkg-config libssl-dev`
+- Install wasm target: `rustup target add wasm32-unknown-unknown`
+- Install wasm-bindgen CLI: `cargo install wasm-bindgen-cli`
 
 Clone this repository:
 
@@ -31,13 +27,10 @@ Clone this repository:
 $ git clone https://github.com/abhaynayar/n2t-wasm
 ```
 
-Build the emulator:
+Build and run the emulator:
 
-- Run `wasm-pack build` in the root directory. This will create a new pkg/ directory for the wasm modules.
-- Run `npm init wasm-app www` in the root directory. This will generate a web page in a new www/ directory.
-- Run `npm install` in www directory to install the node modules.
-- Run `npm run start` in the `www` directory to start a local testing instance.
-- Run `npm run build` in the `www` directory to publish the results to `dist`.
+- Run `./run.sh` at the repository root to build Rust (`wasm32-unknown-unknown`), generate JS bindings in `www/pkg/`, and start a local web server.
+- Open `http://localhost:8080`.
 
 ### Backlog
 

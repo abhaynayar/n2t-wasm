@@ -1,20 +1,14 @@
 use wasm_bindgen::prelude::*;
 
-// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
-// allocator.
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
 #[wasm_bindgen]
-extern { fn alert(s: &str); }
+extern "C" { fn alert(s: &str); }
 
 #[wasm_bindgen]
 pub fn greet() { alert("Hello, n2t-wasm!"); }
 
 // ------------------------------------------------------------------------
 
-#[wasm_bindgen(raw_module="../www/index.js")]
+#[wasm_bindgen(raw_module="../index.js")]
 extern "C" { fn put_xy(addr: u16, value: u16); }
 
 #[wasm_bindgen]
